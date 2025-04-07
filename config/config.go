@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	"go.uber.org/zap"
 )
 
 // Config 应用程序配置
@@ -28,21 +28,19 @@ type Config struct {
 	Storage struct {
 		// 本地存储配置
 		Local struct {
-			Enabled bool   `mapstructure:"enabled"`
-			Path    string `mapstructure:"path"`
-			BaseURL string `mapstructure:"baseUrl"`
+			Path string `mapstructure:"path"`
 		} `mapstructure:"local"`
 
 		// 对象存储配置
 		Object struct {
 			Enabled         bool   `mapstructure:"enabled"`
 			Endpoint        string `mapstructure:"endpoint"`
-			AccessKeyID     string `mapstructure:"accessKeyId"`
+			AccessKeyID     string `mapstructure:"accessKeyID"`
 			SecretAccessKey string `mapstructure:"secretAccessKey"`
 			BucketName      string `mapstructure:"bucketName"`
 			Region          string `mapstructure:"region"`
 			UseSSL          bool   `mapstructure:"useSSL"`
-			BaseURL         string `mapstructure:"baseUrl"`
+			BaseURL         string `mapstructure:"baseURL"`
 			PathPrefix      string `mapstructure:"pathPrefix"`
 		} `mapstructure:"object"`
 
@@ -54,8 +52,9 @@ type Config struct {
 	} `mapstructure:"storage"`
 
 	Schedule struct {
-		CheckInterval   string `mapstructure:"checkInterval"`
-		CleanupInterval string `mapstructure:"cleanupInterval"`
+		CheckInterval        string `mapstructure:"checkInterval"`
+		CleanupInterval      string `mapstructure:"cleanupInterval"`
+		LocalCleanupInterval string `mapstructure:"localCleanupInterval"`
 	} `mapstructure:"schedule"`
 
 	Retry struct {
@@ -93,9 +92,7 @@ func LoadConfig() error {
 	viper.SetDefault("bing.baseUrl", "https://www.bing.com")
 
 	// 本地存储默认配置
-	viper.SetDefault("storage.local.enabled", true)
 	viper.SetDefault("storage.local.path", "./cache/images")
-	viper.SetDefault("storage.local.baseUrl", "http://localhost:3000/images")
 
 	// 对象存储默认配置
 	viper.SetDefault("storage.object.enabled", false)
@@ -109,8 +106,9 @@ func LoadConfig() error {
 	viper.SetDefault("storage.retentionDays", 30)
 
 	// 定时任务配置
-	viper.SetDefault("schedule.checkInterval", "0 0 * * *")   // 每天午夜
-	viper.SetDefault("schedule.cleanupInterval", "0 1 * * *") // 每天凌晨1点
+	viper.SetDefault("schedule.checkInterval", "0 0 * * *")        // 每天午夜
+	viper.SetDefault("schedule.cleanupInterval", "0 1 * * *")      // 每天凌晨1点
+	viper.SetDefault("schedule.localCleanupInterval", "0 2 * * *") // 每天凌晨2点
 
 	// 重试配置
 	viper.SetDefault("retry.maxAttempts", 3)
@@ -172,13 +170,13 @@ func GetMetadataFilename(date time.Time, prefix string) string {
 }
 
 // WatchConfig 监视配置文件变更
-func WatchConfig(logger *zap.SugaredLogger, callback func(*Config)) {
+func WatchConfig(callback func(*Config)) {
 	viper.OnConfigChange(func(e fsnotify.Event) {
-		logger.Infof("配置文件已修改: %s", e.Name)
+		logrus.Infof("配置文件已修改: %s", e.Name)
 
 		// 重新加载配置
 		if err := viper.ReadInConfig(); err != nil {
-			logger.Errorf("重新加载配置失败: %v", err)
+			logrus.Errorf("重新加载配置失败: %v", err)
 			return
 		}
 
@@ -186,18 +184,18 @@ func WatchConfig(logger *zap.SugaredLogger, callback func(*Config)) {
 		oldConfig := AppConfig
 		newConfig := Config{}
 		if err := viper.Unmarshal(&newConfig); err != nil {
-			logger.Errorf("解析配置失败: %v", err)
+			logrus.Errorf("解析配置失败: %v", err)
 			return
 		}
 
 		// 验证新配置
 		if newConfig.Storage.Object.Enabled {
 			if newConfig.Storage.Object.AccessKeyID == "" || newConfig.Storage.Object.SecretAccessKey == "" {
-				logger.Warn("警告: 对象存储已启用，但未提供访问凭证。这可能导致连接失败。")
+				logrus.Warn("警告: 对象存储已启用，但未提供访问凭证。这可能导致连接失败。")
 			}
 
 			if newConfig.Storage.Object.BucketName == "" {
-				logger.Error("对象存储已启用，但未提供桶名称，忽略此次配置更新")
+				logrus.Error("对象存储已启用，但未提供桶名称，忽略此次配置更新")
 				return
 			}
 		}
@@ -211,34 +209,38 @@ func WatchConfig(logger *zap.SugaredLogger, callback func(*Config)) {
 		}
 
 		// 记录更改
-		logConfigChanges(&oldConfig, &newConfig, logger)
+		logConfigChanges(&oldConfig, &newConfig)
 	})
 
 	// 开始监视配置文件
 	viper.WatchConfig()
-	logger.Info("已启动配置文件监视")
+	logrus.Info("已启动配置文件监视")
 }
 
 // logConfigChanges 记录配置更改
-func logConfigChanges(old, new *Config, logger *zap.SugaredLogger) {
+func logConfigChanges(old, new *Config) {
 	// 记录主要配置变更
 	if old.Server.Port != new.Server.Port || old.Server.Host != new.Server.Host {
-		logger.Infof("服务器配置已更改: %s:%s -> %s:%s",
+		logrus.Infof("服务器配置已更改: %s:%s -> %s:%s",
 			old.Server.Host, old.Server.Port, new.Server.Host, new.Server.Port)
 	}
 
 	// 记录定时任务配置变更
 	if old.Schedule.CheckInterval != new.Schedule.CheckInterval {
-		logger.Infof("壁纸检查间隔已更改: %s -> %s", old.Schedule.CheckInterval, new.Schedule.CheckInterval)
+		logrus.Infof("壁纸检查间隔已更改: %s -> %s", old.Schedule.CheckInterval, new.Schedule.CheckInterval)
 	}
 
 	if old.Schedule.CleanupInterval != new.Schedule.CleanupInterval {
-		logger.Infof("清理间隔已更改: %s -> %s", old.Schedule.CleanupInterval, new.Schedule.CleanupInterval)
+		logrus.Infof("清理间隔已更改: %s -> %s", old.Schedule.CleanupInterval, new.Schedule.CleanupInterval)
+	}
+
+	if old.Schedule.LocalCleanupInterval != new.Schedule.LocalCleanupInterval {
+		logrus.Infof("本地清理间隔已更改: %s -> %s", old.Schedule.LocalCleanupInterval, new.Schedule.LocalCleanupInterval)
 	}
 
 	// 记录保留策略变更
 	if old.Storage.RetentionDays != new.Storage.RetentionDays {
-		logger.Infof("文件保留天数已更改: %d -> %d", old.Storage.RetentionDays, new.Storage.RetentionDays)
+		logrus.Infof("文件保留天数已更改: %d -> %d", old.Storage.RetentionDays, new.Storage.RetentionDays)
 	}
 }
 

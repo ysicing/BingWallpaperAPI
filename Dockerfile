@@ -1,4 +1,4 @@
-FROM golang:1.23-alpine AS builder
+FROM ysicing/god AS builder
 
 WORKDIR /app
 
@@ -12,21 +12,18 @@ RUN go mod download
 COPY . .
 
 # 编译应用
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bingwallpaper ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -o bingwallpaper cmd/server/main.go
 
 # 使用轻量级基础镜像
-FROM alpine:3.19
+FROM ysicing/debian
 
 WORKDIR /app
-
-# 安装CA证书以支持HTTPS请求
-RUN apk --no-cache add ca-certificates tzdata
 
 # 设置时区
 ENV TZ=Asia/Shanghai
 
 # 创建缓存目录
-RUN mkdir -p /app/cache/images
+RUN mkdir -p /app/cache/images /app/config
 
 # 从构建阶段复制编译好的二进制文件
 COPY --from=builder /app/bingwallpaper /app/
@@ -37,8 +34,16 @@ COPY --from=builder /app/config/config.yaml /app/config/
 # 设置权限
 RUN chmod +x /app/bingwallpaper
 
+# 设置环境变量
+ENV BING_API_STORAGE_LOCAL_PATH=/app/cache/images
+ENV BING_API_STORAGE_METADATAPATH=/app/cache/metadata.json
+
 # 暴露端口
 EXPOSE 3000
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:3000/health || exit 1
 
 # 运行应用
 CMD ["/app/bingwallpaper"]

@@ -1,0 +1,30 @@
+# Git
+.git
+.gitignore
+
+# Go
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 缓存
+cache/
+*.log
+
+# 其他
+README.md
+LICENSE
+Dockerfile
+.dockerignore 

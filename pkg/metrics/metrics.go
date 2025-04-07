@@ -29,6 +29,9 @@ type Metrics struct {
 	// 更新跳过次数
 	UpdateSkipped prometheus.Counter
 
+	// 清理成功次数
+	CleanupSuccess prometheus.Counter
+
 	// API请求计数
 	APIRequests *prometheus.CounterVec
 
@@ -89,6 +92,14 @@ func NewMetrics(namespace string) *Metrics {
 				Namespace: namespace,
 				Name:      "update_skipped_total",
 				Help:      "壁纸更新跳过次数",
+			},
+		),
+
+		CleanupSuccess: promauto.NewCounter(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Name:      "cleanup_success_total",
+				Help:      "本地图片清理成功次数",
 			},
 		),
 

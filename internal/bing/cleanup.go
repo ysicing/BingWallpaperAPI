@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 // CleanupOldFiles 清理过期的文件
@@ -15,13 +17,13 @@ func (s *Service) CleanupOldFiles() error {
 	cfg := s.cfg
 	retentionDays := cfg.Storage.RetentionDays
 	if retentionDays <= 0 {
-		s.log.Info("文件保留天数设置为0或负数，跳过清理")
+		logrus.Info("文件保留天数设置为0或负数，跳过清理")
 		return nil
 	}
 
 	// 计算截止日期
 	cutoffDate := time.Now().AddDate(0, 0, -retentionDays)
-	s.log.Infof("清理早于 %s 的文件", cutoffDate.Format("2006-01-02"))
+	logrus.Infof("清理早于 %s 的文件", cutoffDate.Format("2006-01-02"))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
@@ -64,7 +66,7 @@ func (s *Service) CleanupOldFiles() error {
 		return fmt.Errorf("清理过程中发生错误: %s", strings.Join(errs, "; "))
 	}
 
-	s.log.Info("清理过期文件完成")
+	logrus.Info("清理过期文件完成")
 	return nil
 }
 
@@ -78,7 +80,7 @@ func (s *Service) cleanupLocalStorage(ctx context.Context, cutoffDate time.Time)
 		return nil // 目录不存在，无需清理
 	}
 
-	s.log.Infof("开始清理本地存储目录: %s", localPath)
+	logrus.Infof("开始清理本地存储目录: %s", localPath)
 	deletedCount := 0
 
 	// 遍历本地存储目录
@@ -91,7 +93,7 @@ func (s *Service) cleanupLocalStorage(ctx context.Context, cutoffDate time.Time)
 		}
 
 		if err != nil {
-			s.log.Warnf("访问路径 %s 时出错: %v", path, err)
+			logrus.Warnf("访问路径 %s 时出错: %v", path, err)
 			return nil // 继续遍历
 		}
 
@@ -121,12 +123,12 @@ func (s *Service) cleanupLocalStorage(ctx context.Context, cutoffDate time.Time)
 		// 如果文件日期在截止日期之前，删除文件
 		if fileDate.Before(cutoffDate) {
 			if err := os.Remove(path); err != nil {
-				s.log.Warnf("删除文件 %s 失败: %v", path, err)
+				logrus.Warnf("删除文件 %s 失败: %v", path, err)
 				return nil // 继续处理其他文件
 			}
 
 			deletedCount++
-			s.log.Debugf("已删除过期文件: %s", path)
+			logrus.Debugf("已删除过期文件: %s", path)
 		}
 
 		return nil
@@ -138,10 +140,10 @@ func (s *Service) cleanupLocalStorage(ctx context.Context, cutoffDate time.Time)
 
 	// 删除空目录
 	if err := s.removeEmptyDirs(localPath); err != nil {
-		s.log.Warnf("清理空目录失败: %v", err)
+		logrus.Warnf("清理空目录失败: %v", err)
 	}
 
-	s.log.Infof("本地存储清理完成，共删除 %d 个过期文件", deletedCount)
+	logrus.Infof("本地存储清理完成，共删除 %d 个过期文件", deletedCount)
 	return nil
 }
 
@@ -172,7 +174,7 @@ func (s *Service) removeEmptyDirs(dir string) error {
 		if err := os.Remove(dir); err != nil {
 			return err
 		}
-		s.log.Debugf("已删除空目录: %s", dir)
+		logrus.Debugf("已删除空目录: %s", dir)
 	}
 
 	return nil
@@ -184,7 +186,7 @@ func (s *Service) cleanupObjectStorage(ctx context.Context, cutoffDate time.Time
 		return nil // 没有配置对象存储
 	}
 
-	s.log.Info("开始清理对象存储中的过期文件")
+	logrus.Info("开始清理对象存储中的过期文件")
 
 	// 获取对象存储中的前缀（基础路径）
 	prefix := s.cfg.Storage.Object.PathPrefix
@@ -216,7 +218,7 @@ func (s *Service) cleanupObjectStorage(ctx context.Context, cutoffDate time.Time
 				ListObjects(context.Context, string, bool) ([]string, error)
 			}).ListObjects(ctx, yearPath, true)
 			if err != nil {
-				s.log.Warnf("列出年份 %d 的文件失败: %v", year, err)
+				logrus.Warnf("列出年份 %d 的文件失败: %v", year, err)
 				continue
 			}
 
@@ -229,7 +231,7 @@ func (s *Service) cleanupObjectStorage(ctx context.Context, cutoffDate time.Time
 				}
 
 				if err := s.objectStorage.Delete(ctx, obj); err != nil {
-					s.log.Warnf("删除对象 %s 失败: %v", obj, err)
+					logrus.Warnf("删除对象 %s 失败: %v", obj, err)
 					continue
 				}
 
@@ -245,7 +247,7 @@ func (s *Service) cleanupObjectStorage(ctx context.Context, cutoffDate time.Time
 			ListObjects(context.Context, string, bool) ([]string, error)
 		}).ListObjects(ctx, yearPath, false)
 		if err != nil {
-			s.log.Warnf("列出年份 %d 的月份失败: %v", year, err)
+			logrus.Warnf("列出年份 %d 的月份失败: %v", year, err)
 			continue
 		}
 
@@ -264,7 +266,7 @@ func (s *Service) cleanupObjectStorage(ctx context.Context, cutoffDate time.Time
 					ListObjects(context.Context, string, bool) ([]string, error)
 				}).ListObjects(ctx, monthPath, true)
 				if err != nil {
-					s.log.Warnf("列出年份 %d 月份 %d 的文件失败: %v", year, month, err)
+					logrus.Warnf("列出年份 %d 月份 %d 的文件失败: %v", year, month, err)
 					continue
 				}
 
@@ -277,7 +279,7 @@ func (s *Service) cleanupObjectStorage(ctx context.Context, cutoffDate time.Time
 					}
 
 					if err := s.objectStorage.Delete(ctx, obj); err != nil {
-						s.log.Warnf("删除对象 %s 失败: %v", obj, err)
+						logrus.Warnf("删除对象 %s 失败: %v", obj, err)
 						continue
 					}
 
@@ -294,7 +296,7 @@ func (s *Service) cleanupObjectStorage(ctx context.Context, cutoffDate time.Time
 					ListObjects(context.Context, string, bool) ([]string, error)
 				}).ListObjects(ctx, monthPath, false)
 				if err != nil {
-					s.log.Warnf("列出年份 %d 月份 %d 的日期失败: %v", year, month, err)
+					logrus.Warnf("列出年份 %d 月份 %d 的日期失败: %v", year, month, err)
 					continue
 				}
 
@@ -314,7 +316,7 @@ func (s *Service) cleanupObjectStorage(ctx context.Context, cutoffDate time.Time
 							ListObjects(context.Context, string, bool) ([]string, error)
 						}).ListObjects(ctx, dayPath, true)
 						if err != nil {
-							s.log.Warnf("列出年份 %d 月份 %d 日期 %d 的文件失败: %v", year, month, day, err)
+							logrus.Warnf("列出年份 %d 月份 %d 日期 %d 的文件失败: %v", year, month, day, err)
 							continue
 						}
 
@@ -327,7 +329,7 @@ func (s *Service) cleanupObjectStorage(ctx context.Context, cutoffDate time.Time
 							}
 
 							if err := s.objectStorage.Delete(ctx, obj); err != nil {
-								s.log.Warnf("删除对象 %s 失败: %v", obj, err)
+								logrus.Warnf("删除对象 %s 失败: %v", obj, err)
 								continue
 							}
 
@@ -339,6 +341,6 @@ func (s *Service) cleanupObjectStorage(ctx context.Context, cutoffDate time.Time
 		}
 	}
 
-	s.log.Infof("对象存储清理完成，共删除 %d 个过期文件", deletedCount)
+	logrus.Infof("对象存储清理完成，共删除 %d 个过期文件", deletedCount)
 	return nil
 }

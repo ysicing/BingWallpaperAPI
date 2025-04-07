@@ -13,7 +13,7 @@ import (
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"go.uber.org/zap"
+	"github.com/sirupsen/logrus"
 )
 
 // 定义常见的对象存储错误
@@ -40,6 +40,7 @@ type ObjectStorageConfig struct {
 
 // ObjectStorage 实现S3兼容的对象存储
 type ObjectStorage struct {
+	useSSL     bool
 	client     *minio.Client
 	bucketName string
 	region     string
@@ -47,12 +48,11 @@ type ObjectStorage struct {
 	pathPrefix string
 	chunkSize  int64
 	maxRetries int
-	logger     *zap.SugaredLogger
 	mutex      sync.RWMutex // 用于保护客户端重新初始化
 }
 
 // NewObjectStorage 创建新的对象存储提供者
-func NewObjectStorage(cfg ObjectStorageConfig, logger *zap.SugaredLogger) (*ObjectStorage, error) {
+func NewObjectStorage(cfg ObjectStorageConfig) (*ObjectStorage, error) {
 	if cfg.ChunkSize <= 0 {
 		cfg.ChunkSize = 5 * 1024 * 1024 // 默认5MB
 	}
@@ -65,10 +65,13 @@ func NewObjectStorage(cfg ObjectStorageConfig, logger *zap.SugaredLogger) (*Obje
 	client, err := minio.New(cfg.Endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
 		Secure: cfg.UseSSL,
-		Region: cfg.Region,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建对象存储客户端失败: %w", err)
+	}
+
+	if len(cfg.BaseURL) == 0 {
+		cfg.BaseURL = cfg.Endpoint
 	}
 
 	storage := &ObjectStorage{
@@ -79,7 +82,7 @@ func NewObjectStorage(cfg ObjectStorageConfig, logger *zap.SugaredLogger) (*Obje
 		pathPrefix: cfg.PathPrefix,
 		chunkSize:  cfg.ChunkSize,
 		maxRetries: cfg.MaxRetries,
-		logger:     logger,
+		useSSL:     cfg.UseSSL,
 	}
 
 	// 检查并初始化存储桶
@@ -99,7 +102,7 @@ func (s *ObjectStorage) initBucket(ctx context.Context) error {
 	}
 
 	if !exists {
-		s.logger.Infof("桶 %s 不存在，正在创建...", s.bucketName)
+		logrus.Infof("桶 %s 不存在，正在创建...", s.bucketName)
 		if err := s.client.MakeBucket(ctx, s.bucketName, minio.MakeBucketOptions{Region: s.region}); err != nil {
 			return fmt.Errorf("创建桶失败: %w", err)
 		}
@@ -119,7 +122,7 @@ func (s *ObjectStorage) initBucket(ctx context.Context) error {
 
 		policy = fmt.Sprintf(policy, s.bucketName)
 		if err := s.client.SetBucketPolicy(ctx, s.bucketName, policy); err != nil {
-			s.logger.Warnf("设置桶策略失败: %v", err)
+			logrus.Warnf("设置桶策略失败: %v", err)
 		}
 	}
 
@@ -151,7 +154,7 @@ func (s *ObjectStorage) Save(ctx context.Context, data io.Reader, filename strin
 		}
 
 		lastErr = err
-		s.logger.Warnf("上传对象失败 (尝试 %d/%d): %v", attempt, s.maxRetries, err)
+		logrus.Warnf("上传对象失败 (尝试 %d/%d): %v", attempt, s.maxRetries, err)
 
 		// 如果是最后一次尝试，不需要等待
 		if attempt < s.maxRetries {
@@ -175,7 +178,7 @@ func (s *ObjectStorage) Save(ctx context.Context, data io.Reader, filename strin
 		return "", fmt.Errorf("%w: %v", ErrUploadFailed, lastErr)
 	}
 
-	s.logger.Infof("上传文件到对象存储: %s/%s (%d bytes)", s.bucketName, filename, info.Size)
+	logrus.Infof("上传文件到对象存储: %s/%s (%d bytes)", s.bucketName, filename, info.Size)
 
 	return s.GetURL(filename), nil
 }
@@ -256,7 +259,7 @@ func (s *ObjectStorage) SaveMultipart(ctx context.Context, data io.Reader, filen
 		return "", fmt.Errorf("完成分片上传失败: %w", err)
 	}
 
-	s.logger.Infof("完成分片上传到对象存储: %s/%s (%d 个分片)", s.bucketName, filename, len(parts))
+	logrus.Infof("完成分片上传到对象存储: %s/%s (%d 个分片)", s.bucketName, filename, len(parts))
 
 	return s.GetURL(filename), nil
 }
@@ -268,14 +271,13 @@ func (s *ObjectStorage) GetURL(filename string) string {
 		filename = filepath.Join(s.pathPrefix, filename)
 	}
 
-	// 如果提供了自定义域名，则使用
-	if s.baseURL != "" {
-		return fmt.Sprintf("%s/%s", strings.TrimRight(s.baseURL, "/"), filename)
-	}
-
 	// 否则使用默认S3 URL
-	return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s",
-		s.bucketName, s.region, filename)
+	scheme := "http"
+	if s.useSSL {
+		scheme = "https"
+	}
+	return fmt.Sprintf("%s://%s/%s/%s",
+		scheme, s.baseURL, s.bucketName, filename)
 }
 
 // Delete 删除对象
@@ -290,7 +292,7 @@ func (s *ObjectStorage) Delete(ctx context.Context, filename string) error {
 	if err != nil {
 		// 如果对象不存在，则忽略错误
 		if minio.ToErrorResponse(err).Code == "NoSuchKey" {
-			s.logger.Warnf("要删除的对象不存在: %s", filename)
+			logrus.Warnf("要删除的对象不存在: %s", filename)
 			return nil
 		}
 		return fmt.Errorf("%w: %v", ErrObjectStorageAccess, err)
@@ -302,7 +304,7 @@ func (s *ObjectStorage) Delete(ctx context.Context, filename string) error {
 		return fmt.Errorf("删除对象失败: %w", err)
 	}
 
-	s.logger.Infof("已删除对象: %s/%s", s.bucketName, filename)
+	logrus.Infof("已删除对象: %s/%s", s.bucketName, filename)
 	return nil
 }
 
@@ -379,7 +381,6 @@ func (s *ObjectStorage) Reconnect(cfg ObjectStorageConfig) error {
 	// 更新实例
 	s.client = client
 	s.bucketName = cfg.BucketName
-	s.region = cfg.Region
 	s.baseURL = cfg.BaseURL
 	s.pathPrefix = cfg.PathPrefix
 
@@ -388,6 +389,6 @@ func (s *ObjectStorage) Reconnect(cfg ObjectStorageConfig) error {
 		return err
 	}
 
-	s.logger.Info("对象存储客户端已重新连接")
+	logrus.Info("对象存储客户端已重新连接")
 	return nil
 }

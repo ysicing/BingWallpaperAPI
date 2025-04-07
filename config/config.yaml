@@ -7,22 +7,19 @@ bing:
   baseUrl: "https://www.bing.com"
 
 storage:
-  # 本地存储配置
+  # 本地存储配置（始终启用）
   local:
-    enabled: true
     path: "./cache/images"
-    baseUrl: "http://localhost:3000/images"
   
   # 对象存储配置（S3兼容）
   object:
-    enabled: false
-    endpoint: "s3.amazonaws.com"   # 可替换为其他S3兼容服务的端点
-    accessKeyId: ""                # 需要填写访问密钥ID
-    secretAccessKey: ""            # 需要填写密钥
+    enabled: true
+    endpoint: "play.min.io"   # 可替换为其他S3兼容服务的端点
+    accessKeyID: "Q3AM3UQ867SPQQA43P2F"                # 需要填写访问密钥ID
+    secretAccessKey: "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG"            # 需要填写密钥
     bucketName: "bing-wallpapers"  # 桶名称
-    region: "us-east-1"            # 区域
     useSSL: true                   # 是否使用SSL
-    baseUrl: ""                    # 可选，CDN地址
+    baseURL: ""                    # 可选，CDN地址
     pathPrefix: "bing-wallpapers"  # 文件路径前缀
   
   # 元数据存储位置
@@ -32,8 +29,8 @@ storage:
   retentionDays: 30
 
 schedule:
-  checkInterval: "0 0 0 * * *"   # 每天午夜检查更新
-  cleanupInterval: "0 0 1 * * *" # 每天凌晨1点执行清理
+  checkInterval: "0 0 * * *"   # 每天午夜检查更新
+  cleanupInterval: "0 1 * * *" # 每天凌晨1点执行清理
 
 retry:
   maxAttempts: 3
