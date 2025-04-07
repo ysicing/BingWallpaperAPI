@@ -1,0 +1,45 @@
+server:
+  port: "3000"
+  host: "0.0.0.0"
+
+bing:
+  apiUrl: "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1"
+  baseUrl: "https://www.bing.com"
+
+storage:
+  # 本地存储配置
+  local:
+    enabled: true
+    path: "./cache/images"
+    baseUrl: "http://localhost:3000/images"
+  
+  # 对象存储配置（S3兼容）
+  object:
+    enabled: false
+    endpoint: "s3.amazonaws.com"   # 可替换为其他S3兼容服务的端点
+    accessKeyId: ""                # 需要填写访问密钥ID
+    secretAccessKey: ""            # 需要填写密钥
+    bucketName: "bing-wallpapers"  # 桶名称
+    region: "us-east-1"            # 区域
+    useSSL: true                   # 是否使用SSL
+    baseUrl: ""                    # 可选，CDN地址
+    pathPrefix: "bing-wallpapers"  # 文件路径前缀
+  
+  # 元数据存储位置
+  metadataPath: "./cache/metadata.json"
+  
+  # 保留策略（天数）
+  retentionDays: 30
+
+schedule:
+  checkInterval: "0 0 0 * * *"   # 每天午夜检查更新
+  cleanupInterval: "0 0 1 * * *" # 每天凌晨1点执行清理
+
+retry:
+  maxAttempts: 3
+  delayMs: 1000
+
+api:
+  basePath: "/api/v1"          # API基础路径
+  rateLimit: 60                # 每分钟请求限制
+  rateLimitWindow: "1m"        # 限制窗口时间

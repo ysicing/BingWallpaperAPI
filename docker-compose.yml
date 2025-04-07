@@ -1,0 +1,25 @@
+version: '3'
+
+services:
+  bingwallpaper-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bing-wallpaper-api:latest
+    container_name: bing-wallpaper-api
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./cache:/app/cache
+    environment:
+      - TZ=Asia/Shanghai
+      - BING_API_SERVER_PORT=3000
+      - BING_API_SERVER_HOST=0.0.0.0
+      # 可选：启用对象存储
+      # - BING_API_STORAGE_OBJECT_ENABLED=true
+      # - BING_API_STORAGE_OBJECT_ENDPOINT=s3.example.com
+      # - BING_API_STORAGE_OBJECT_ACCESSKEYID=your-access-key
+      # - BING_API_STORAGE_OBJECT_SECRETACCESSKEY=your-secret-key
+      # - BING_API_STORAGE_OBJECT_BUCKETNAME=your-bucket
+      # - BING_API_STORAGE_OBJECT_REGION=us-east-1
