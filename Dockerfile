@@ -2,6 +2,8 @@ FROM ysicing/god AS builder
 
 WORKDIR /app
 
+ENV GOPROXY=https://goproxy.cn,direct
+
 # 复制Go模块定义文件
 COPY go.mod go.sum ./
 

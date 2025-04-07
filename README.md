@@ -24,7 +24,7 @@ cd BingWallpaperAPI
 2. 使用Docker Compose启动服务
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 3. 访问API
